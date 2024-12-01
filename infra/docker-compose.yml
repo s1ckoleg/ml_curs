@@ -1,0 +1,44 @@
+version: '3.5'
+
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx_logs:/var/log/nginx
+    ports:
+      - "8080:80"
+    networks:
+      - app_network
+    restart: always
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.0
+    container_name: logstash
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/config/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./nginx_logs:/var/log/nginx
+    ports:
+      - "9600:9600"
+    networks:
+      - app_network
+    restart: always
+
+  flask-app:
+    build:
+      context: ./app
+    container_name: flask-app
+    ports:
+      - "5000:5000"
+    networks:
+      - app_network
+    restart: always
+
+volumes:
+  nginx_logs:
+
+networks:
+  app_network:
