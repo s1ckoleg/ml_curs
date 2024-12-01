@@ -1,68 +1,82 @@
 import pandas as pd
+import numpy as np
+import requests
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
+from geopy.geocoders import Nominatim  # Optional for geolocation (requires API or local DB)
+
+IPINFO_TOKEN = 'b534c3e4cc0345'
+
+def get_geolocation(ip):
+    """Fetch geolocation data using IPinfo API."""
+    url = f"https://ipinfo.io/{ip}?token={IPINFO_TOKEN}"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        country = data.get('country', 'UNKNOWN')
+        city = data.get('city', 'UNKNOWN')
+        print(f"Country: {country}, City: {city}")
+        return country, city
+    except Exception as e:
+        return 'UNKNOWN', 'UNKNOWN'
+
+def parse_nginx_logs_with_geo(log_file):
+    logs = []
+    with open(log_file) as f:
+        for line in f:
+            parts = line.split()
+            ip = parts[0]
+            country, city = get_geolocation(ip)
+            logs.append({
+                'ip': ip,
+                'country': country,
+                'city': city,
+                'datetime': parts[3].strip('['),
+                'method': parts[5].strip('"'),
+                'url': parts[6],
+                'status': int(parts[8]),
+                'size': int(parts[9]) if parts[9].isdigit() else 0,
+                'user_agent': ' '.join(parts[11:]).strip('"')
+            })
+    return pd.DataFrame(logs)
+
+df = parse_nginx_logs_with_geo('./logs/train_logs.log')
+
+df['datetime'] = pd.to_datetime(df['datetime'], format='%d/%b/%Y:%H:%M:%S')
+df['hour'] = df['datetime'].dt.hour  # Hour of request
+df['request_rate'] = df.groupby('ip')['ip'].transform('count')  # Requests per IP
 
 
-def parse_log_entry(log_entry):  # TODO: logstash
-    parts = log_entry.split()
-    ip_address = parts[0]
-    timestamp = parts[3].strip('[]')
-    request = parts[5].strip('"')
-    response_code = int(parts[8])
-    bytes_sent = int(parts[9])
-    return ip_address, timestamp, request, response_code, bytes_sent
+df['ip_encoded'] = LabelEncoder().fit_transform(df['ip'])
+df['method_encoded'] = LabelEncoder().fit_transform(df['method'])
+df['user_agent_encoded'] = LabelEncoder().fit_transform(df['user_agent'])
+df['country_encoded'] = LabelEncoder().fit_transform(df['country'])
+df['city_encoded'] = LabelEncoder().fit_transform(df['city'])
 
+df['is_anomaly'] = np.where(
+    (df['status'] >= 400) | 
+    (df['request_rate'] > 100) | 
+    (df['hour'] < 6) | 
+    (df['size'] > 1_000_000) |
+    (df['country'] == 'UNKNOWN'), 1, 0
+)
 
-def process_logs(logs):
-    data = []
-    for log in logs:
-        ip, time, request, response, bytes_sent = parse_log_entry(log)
-        data.append({'ip': ip, 'response': response, 'bytes': bytes_sent})
-    return pd.DataFrame(data)
+X = df[['ip_encoded', 'method_encoded', 'size', 'request_rate', 'hour', 'user_agent_encoded', 'country_encoded', 'city_encoded']]
+y = df['is_anomaly']
 
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
 
-with open('./logs/train_logs.log', 'r') as file:
-    lines = file.readlines()
-    logs = [line.strip() for line in lines]
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
-df = process_logs(logs)
-df['is_error'] = df['response'].apply(lambda x: 1 if x >= 400 else 0)
-df['label'] = df['is_error']
+clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf.fit(X_train, y_train)
 
-X = df[['is_error', 'bytes']]
-y = df['label']
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=10)
-
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-y_pred = model.predict(X_test)
-print('Accuracy:', accuracy_score(y_test, y_pred))
+y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))
+print(confusion_matrix(y_test, y_pred))
 
-with open('./logs/eval_logs.log', 'r') as test_file:
-    test_lines = test_file.readlines()
-    new_logs = [line.strip() for line in test_lines]
-
-new_log_df = process_logs(new_logs)
-new_log_df['is_error'] = new_log_df['response'].apply(lambda x: 1 if x >= 400 else 0)
-
-predictions = model.predict(new_log_df[['is_error', 'bytes']])
-anomaly_count = sum(predictions)
-total_count = len(predictions)
-anomaly_fraction = anomaly_count / total_count
-anomaly_threshold = 0.2
-
-if anomaly_fraction > anomaly_threshold:
-    print(f"Overall anomaly detected! {anomaly_fraction * 100:.1f}% of logs are anomalous.")
-else:
-    print(f"No overall anomaly detected. Only {anomaly_fraction * 100:.1f}% of logs are anomalous.")
-
-# current train_logs.log contains 20% errors
-# current eval_logs.log contains 50% errors
-# code return "Overall anomaly detected! 48.7% of logs are anomalous."
-
-# for log_entry, prediction in zip(new_logs, predictions):
-#     print(f'Log entry: {log_entry} - Predicted anomaly' if prediction == 1 else f'Log entry: {log_entry} - No anomaly detected')
+joblib.dump(clf, 'random_forest_model.pkl')
