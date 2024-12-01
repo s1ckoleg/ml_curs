@@ -4,7 +4,7 @@ import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
 from get_geolocation import get_geolocation
 
@@ -59,12 +59,21 @@ X_scaled = scaler.fit_transform(X)
 
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf = RandomForestClassifier(n_estimators=100, random_state=42, verbose=True)
 clf.fit(X_train, y_train)
 
+# y_pred = clf.predict(X_test)
+for i, tree in enumerate(clf.estimators_):
+    tree_pred = tree.predict(X_test)
+    print(f"Predictions from tree {i + 1}/{len(clf.estimators_)}: {tree_pred}")
+
+# Final prediction (majority vote)
 y_pred = clf.predict(X_test)
+print("Final aggregated prediction:", y_pred)
 print(classification_report(y_test, y_pred))
 print(confusion_matrix(y_test, y_pred))
+print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
+print(f"Anomalies count: {y_pred.sum()}")
 
 joblib.dump(clf, 'random_forest_model.pkl')
 joblib.dump(scaler, 'scaler.pkl')
