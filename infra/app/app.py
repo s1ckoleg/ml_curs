@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from collections import deque
 import logging
 
@@ -9,6 +10,7 @@ import joblib
 from model.get_geolocation import get_geolocation
 
 app = Flask(__name__)
+CORS(app)
 logging.basicConfig(level=logging.INFO)
 recent_requests = deque(maxlen=10)
 UNKNOWN = 'UNKNOWN'
@@ -30,7 +32,6 @@ def safe_transform(encoder, value):
         return encoder.transform([value])[0]
     else:
         return encoder.transform([UNKNOWN])[0]
-    
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -87,6 +88,9 @@ def analyze():
         prediction = clf.predict(X_scaled)
 
         result = {'is_anomaly': int(prediction[0])}
+
+        app.logger.info(f"Response: {result}")
+
         return jsonify(result)
     except ValueError:
         return jsonify({"error": "Invalid data format"}), 400

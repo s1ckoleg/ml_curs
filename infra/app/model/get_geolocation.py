@@ -1,7 +1,7 @@
 import requests
 
 
-IPINFO_TOKEN = 'b534c3e4cc0345'
+IPINFO_TOKEN = '1345a7491cd0ae'
 
 def get_geolocation(ip):
     """Fetch geolocation data using IPinfo API."""
