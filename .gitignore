@@ -1,5 +1,8 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+node_modules/
+.next
+net-env.d.ts
 *.py[cod]
 *$py.class
 
