@@ -14,6 +14,7 @@ type State = Partial<{
   message: string;
   logObj: string;
   result: number;
+  payload: string;
 }>;
 
 const initialState: State = {
@@ -94,6 +95,7 @@ export default function Form() {
               id="data"
               className="flex-1 flex"
               onPaste={onPaste}
+              defaultValue={state?.payload}
             />
             <SubmitButton />
           </form>
