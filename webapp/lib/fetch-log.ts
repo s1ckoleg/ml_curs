@@ -1,65 +1,36 @@
-interface NginxLog {
-  timestamp: string;
-  method: string;
-  url: string;
-  statusCode: number;
-  bodyBytes: number;
-  host: string;
-}
-
-function parseNginxLog(log: string): NginxLog | null {
-  const regex =
-    /^(?:(\d+\.\d+\.\d+\.\d+)) - - \[([^\]]+)\] "([A-Z]+) ([^\s]+) HTTP\/[\d\.]+" (\d{3}) (\d+)$/;
-
-  const match = log.match(regex);
-
-  if (match) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [_, host, timestamp, method, url, statusCode, bodyBytes] = match;
-
-    return {
-      timestamp,
-      method,
-      url,
-      statusCode: parseInt(statusCode, 10),
-      bodyBytes: parseInt(bodyBytes, 10),
-      host,
-    };
-  }
-
-  return null;
-}
+import { BASE_URL } from "./const";
+import { parseNginxLog } from "./parse-log";
 
 export async function fetchLog(logString: string) {
   try {
     const parsedLog = parseNginxLog(logString);
 
     if (!parsedLog) {
-      throw new Error();
+      throw new Error("Could not parse your log. Wrong format.");
     }
 
     const logObj = {
-      timestamp: parsedLog.timestamp,
+      timestamp: parsedLog?.timestamp,
       http: {
         request: {
-          method: parsedLog.method,
+          method: parsedLog?.method,
         },
         response: {
-          status_code: parsedLog.statusCode,
+          status_code: parsedLog?.statusCode,
           body: {
-            bytes: parsedLog.bodyBytes,
+            bytes: parsedLog?.bodyBytes,
           },
         },
       },
       url: {
-        original: parsedLog.url,
+        original: parsedLog?.url,
       },
       source: {
-        address: parsedLog.host,
+        address: parsedLog?.host,
       },
     };
 
-    const response = await fetch("https://api.thesmolentsev.ru/analyze", {
+    const response = await fetch(BASE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -70,18 +41,18 @@ export async function fetchLog(logString: string) {
     const json = await response.json();
 
     if (!response.ok) {
-      console.error("Error sending message: ", json);
-      throw new Error();
+      throw new Error(
+        "Something went wrong asking our very smart neural network.",
+      );
     }
 
     return {
-      logObj: JSON.stringify(logObj),
       result: json.is_anomaly,
       payload: logString,
     };
-  } catch {
+  } catch (error) {
     return {
-      message: "Could not verify your log. Please check if it is valid.",
+      message: (error as any).message,
       payload: logString,
     };
   }

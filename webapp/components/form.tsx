@@ -1,18 +1,18 @@
 "use client";
 
 import { fetchLog } from "@/lib/fetch-log";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "./ui/button";
 import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
-import { useTransition } from "react";
-import { AlertCircle, RotateCw, SendIcon, Terminal } from "lucide-react";
+import { AlertCircle, SendIcon, Terminal } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { parseNginxLog } from "@/lib/parse-log";
 
 type State = Partial<{
   message: string;
-  logObj: string;
   result: number;
   payload: string;
 }>;
@@ -29,7 +29,7 @@ export async function checkLogAnomaly(
     return null;
   }
 
-  return fetchLog(formData?.get("log") as string);
+  return fetchLog(formData?.get("data") as string);
 }
 
 const SubmitButton = () => {
@@ -49,23 +49,17 @@ const SubmitButton = () => {
 };
 
 export default function Form() {
-  const [state, dispatch] = useActionState(checkLogAnomaly, initialState);
-  const [_, startTransition] = useTransition();
+  const [state, dispatch, isPending] = useActionState(
+    checkLogAnomaly,
+    initialState,
+  );
 
-  const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const logData = e.clipboardData.getData("text");
-
-    startTransition(() => {
-      const fd = new FormData();
-      fd.append("log", logData);
-      dispatch(fd);
-    });
-  };
+  const [data, setData] = useState("");
+  const parsedData = parseNginxLog(data);
 
   return (
     <>
-      <Card>
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <svg
@@ -94,57 +88,54 @@ export default function Form() {
               name="data"
               id="data"
               className="flex-1 flex"
-              onPaste={onPaste}
               defaultValue={state?.payload}
+              disabled={isPending}
+              value={data}
+              onChange={(e) => setData(e.target.value)}
             />
             <SubmitButton />
           </form>
         </CardContent>
       </Card>
-      {state?.message ? (
-        <Alert variant="destructive">
+      {parsedData ? (
+        <Card className="max-w-lg w-full">
+          <CardHeader>
+            <CardTitle>Your Input</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <blockquote>
+              <pre className="w-full">
+                {JSON.stringify(parseNginxLog(data), null, 2)}
+              </pre>
+            </blockquote>
+          </CardContent>
+        </Card>
+      ) : null}
+      {state?.message && state?.payload === data ? (
+        <Alert variant="destructive" className="max-w-lg w-full">
           <AlertCircle className="w-4 h-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{state.message}</AlertDescription>
         </Alert>
       ) : null}
-      {state?.logObj ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Input</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre>{JSON.stringify(state.logObj, null, 2)}</pre>
-          </CardContent>
-        </Card>
-      ) : null}
-      {state?.result !== undefined ? (
-        <Alert variant={state.result === 0 ? "success" : "destructive"}>
-          <Terminal className="h-4 w-4" />
-          <AlertTitle>
-            {state.result === 0 ? "Normal log" : "Anomaly!"}
-          </AlertTitle>
+      {state?.result !== undefined && data ? (
+        <Alert
+          variant={state.result === 0 ? "success" : "destructive"}
+          className="max-w-lg w-full"
+        >
+          <Terminal
+            className={cn(
+              "h-4 w-4",
+              state.result === 0 ? "text-green-500" : "text-destructive",
+            )}
+          />
+          <AlertTitle>{state.result === 0 ? "Normal!" : "Anomaly!"}</AlertTitle>
           <AlertDescription>
             {state.result === 0
               ? "We believe that your log is absolutely normal. Nothing to worry about."
               : "Our very deep and smart neural network considered your log as anomalious."}
           </AlertDescription>
         </Alert>
-      ) : null}
-      {state?.message || state?.logObj || state?.result ? (
-        <div className="flex justify-end gap-4">
-          <Button
-            className="flex items-center gap-2"
-            onClick={() =>
-              startTransition(() => {
-                dispatch(null);
-              })
-            }
-          >
-            <RotateCw />
-            Retry
-          </Button>
-        </div>
       ) : null}
     </>
   );
